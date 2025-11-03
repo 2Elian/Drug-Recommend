@@ -1,0 +1,2 @@
+# conda create -n agent python=3.10
+# pip install openai tenacity rich tiktoken
