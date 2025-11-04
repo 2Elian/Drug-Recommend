@@ -1,0 +1,3 @@
+nohup: ignoring input
+/home/202312150002/anaconda3/etc/profile.d/conda.sh: line 55: PS1: unbound variable
+/data/lzm/DrugRecommend/src/models/baseline/run_deepspeed.sh: line 9: PYTHONPATH: unbound variable
