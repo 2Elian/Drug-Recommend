@@ -73,7 +73,7 @@ def token_count(tokenizer, data):
 
 if __name__ == '__main__':
     import json
-    from src.models.llm.tokenizer import Tokenizer
+    from src.worker.llm.tokenizer import Tokenizer
     from collections import Counter
     tokenizer = Tokenizer(
         model_name="/data1/nuist_llm/TrainLLM/ModelCkpt/glm/glm4-8b-chat"
