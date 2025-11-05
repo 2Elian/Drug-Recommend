@@ -16,3 +16,4 @@ __pycache__/
 src/data/*
 src/worker/baseline/output/*
 src/worker/dataset/*
+resource/output/*

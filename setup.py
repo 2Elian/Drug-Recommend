@@ -1,0 +1,35 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="Drug-Recommend",
+    version="0.1.0",
+    author="Elian",
+    author_email="lizimo@nuist.edu.cn",
+    description="A discharge medication recommendation system for metabolic diseases using GLM4-8B-Chat based on Chinese EMR data.",
+    long_description=open("README.md", encoding="utf-8").read(),
+    long_description_content_type="text/markdown",
+    url="https://github.com/2Elian/Drug-Recommend",
+    packages=find_packages(exclude=("tests", "docs")),
+    python_requires=">=3.10",
+    install_requires=[
+        "torch>=2.1.0",
+        "transformers>=4.44.0",
+        "peft>=0.10.0",
+        "datasets>=2.19.0",
+        "accelerate>=0.30.0",
+        "bitsandbytes>=0.42.0",
+        "swanlab>=0.3.0",
+        "scikit-learn>=1.3.0",
+        "numpy>=1.24.0",
+        "pandas>=2.0.0",
+        "tqdm",
+        "pyyaml",
+        "matplotlib",
+    ],
+    classifiers=[
+        "Programming Language :: Python :: 3.10",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    ],
+)

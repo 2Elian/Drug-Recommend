@@ -4,9 +4,9 @@ import torch.nn.functional as F
 from transformers import AutoModel, AutoConfig, PreTrainedModel
 from transformers.modeling_outputs import SequenceClassifierOutput
 from typing import Optional, List
-from .base_model import FocalLoss, DrugRecommendOutput
+from .base_model import FocalLoss, DrugRecommendOutput, DrugBaseModel
 
-class GenericForMultiLabelClassification(PreTrainedModel):
+class BaselineModel(DrugBaseModel):
     def __init__(
         self,
         model_name_or_path: str,
@@ -15,9 +15,11 @@ class GenericForMultiLabelClassification(PreTrainedModel):
         focal_alpha: float = 0.75,
         focal_gamma: float = 2.0,
         pos_weight: Optional[torch.Tensor] = None,
+        use_metrics: bool = False
     ):
         self.num_labels = num_labels
         self.trust_remote_code: bool = True
+        self.use_metrics = use_metrics
         self.config = AutoConfig.from_pretrained(
             model_name_or_path, 
             trust_remote_code=self.trust_remote_code
@@ -30,15 +32,20 @@ class GenericForMultiLabelClassification(PreTrainedModel):
             trust_remote_code=self.trust_remote_code,
             attn_implementation="eager" # TODO: The input parameters are attn_implementation, flash_attention_2 for training, and eager for inference.
         )
-        self.classifier = nn.Linear(self.config.hidden_size, num_labels)
+        self.drug_adapter = nn.Sequential(
+            nn.Linear(self.config.hidden_size, self.config.hidden_size // 2),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(self.config.hidden_size // 2, self.config.hidden_size // 4),
+            nn.GELU(),
+            nn.Dropout(0.1),
+        )
+        self.drug_classifier  = nn.Linear(self.config.hidden_size // 4, num_labels)
         self.use_focal_loss = use_focal_loss
         if use_focal_loss:
             self.loss_fn = FocalLoss(gamma=focal_gamma, alpha=focal_alpha)
         else:
             self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-            
-        # Dropout for regularization
-        self.dropout = nn.Dropout(0.1)
 
     def forward(
         self,
@@ -93,23 +100,27 @@ class GenericForMultiLabelClassification(PreTrainedModel):
         else:
             pooled_output = hidden_states[:, -1, :]  # fallback
         
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)  # [batch_size, num_labels]
+        adapter_output = self.drug_adapter(pooled_output)
+        logits = self.drug_classifier(adapter_output)  # [batch_size, num_labels]
         
         loss = None
         if labels is not None:
             if self.use_focal_loss:
-                loss = self.loss_fn(logits, labels.float())
+                loss = self.loss_fn(logits, labels.float()) # FocalLoss
             else:
-                loss = self.loss_fn(logits, labels.float())
+                loss = self.loss_fn(logits, labels.float()) # bce loss
+    
+        metrics = None
+        if self.use_metrics:
+            probs = torch.sigmoid(logits)
+            probs_np = probs.detach().cpu().numpy()
+            labels_np = labels.detach().cpu().numpy()
+            metrics = self.compute_metrics(probs_np, labels_np)
 
-        if not return_dict:
-            output = (logits,) + outputs[2:]
-            return ((loss,) + output) if loss is not None else output
-
-        return SequenceClassifierOutput(
+        return DrugRecommendOutput(
             loss=loss,
             logits=logits,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
+            metrics=metrics
         )
