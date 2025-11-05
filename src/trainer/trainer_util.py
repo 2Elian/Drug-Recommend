@@ -70,20 +70,16 @@ def get_trainer(args, train_dataset, data_collator, model, logger):
             inference_mode=False
         )
         model = get_peft_model(model, config)
-    logger.info("🔍 LoRA包装前的可训练参数:")
-    trainable_before = [name for name, param in model.named_parameters() if param.requires_grad]
-    for name in trainable_before:
-        logger.info(f"  - {name}")
     model = model.to(device)
     for name, param in model.named_parameters():
         if "drug_adapter" in name or "drug_classifier" in name:
             param.requires_grad = True
-    logger.info("🔍 LoRA包装后的可训练参数:")
+    logger.info("🔍 Trainable parameters after LoRA wrapping:")
     trainable_before = [name for name, param in model.named_parameters() if param.requires_grad]
     for name in trainable_before:
         logger.info(f"  - {name}")
+    model.print_trainable_parameters()
     use_bfloat16 = torch.cuda.is_bf16_supported()
-    return 1
     fsdp_config = None
     fsdp_strategy = None
     if args.use_fsdp:
@@ -156,10 +152,6 @@ def get_trainer(args, train_dataset, data_collator, model, logger):
             weight_decay=args.weight_decay,
             max_grad_norm=args.max_grad_norm,
         )
-
-    logger.info("Model structure:")
-    if hasattr(model, 'print_trainable_parameters'):
-        model.print_trainable_parameters()
 
     swanlab_config = {
         "lora_rank": args.lora_rank if args.use_lora else "none",

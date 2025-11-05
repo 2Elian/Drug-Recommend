@@ -10,7 +10,7 @@ from src.worker.common.data_process import process_data_for_drug_prediction, loa
 from src.worker.common.common_utils import save_config
 from src.configs.train_config import configuration_parameter
 from src.worker.global_models.baseline import BaselineModel
-from .trainer_util import get_trainer
+from src.trainer.trainer_util import get_trainer
 
 def fit():
     args = configuration_parameter()
@@ -72,3 +72,6 @@ def fit():
     final_save_path = join(args.output_dir)
     trainer.save_model(final_save_path)
     logger.info(f"Model saved to {final_save_path}")
+
+if __name__ == "__main__":
+    fit()

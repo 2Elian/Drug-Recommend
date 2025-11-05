@@ -10,13 +10,13 @@ export PYTHONPATH="/data/lzm/DrugRecommend:$PYTHONPATH"
 
 NUM_GPUS=2
 MASTER_PORT=29500
-
+LOG_FILE="/data/lzm/DrugRecommend/resource/output/checkpoint_save/baseline_1105/train_$(date +%Y%m%d_%H%M%S).log"
 echo "🚀 Distributed training using deepspeed..."
 
 torchrun \
     --nproc_per_node=$NUM_GPUS \
     --master_port=$MASTER_PORT \
-    src/models/trainer/baseline_trainer.py \
+    -m src.trainer.baseline_trainer \
     --train_file /data/lzm/DrugRecommend/src/worker/dataset/train.jsonl \
     --drug_file /data/lzm/DrugRecommend/src/worker/dataset/pre_drug.json \
     --output_dir /data/lzm/DrugRecommend/resource/output/checkpoint_save/baseline_1105 \
@@ -37,4 +37,5 @@ torchrun \
     --save_total_limit 3 \
     --use_deepspeed \
     --deepspeed_config /data/lzm/DrugRecommend/src/configs/zero3.json \
-    --distributed
+    --distributed \
+    2>&1 | tee "$LOG_FILE"
