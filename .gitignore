@@ -1,0 +1,22 @@
+# Python cache file, need be ignore
+__pycache__/
+*.py[cod]
+*$py.class
+
+
+# other common overlooked items
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# special file -> exapmle: your train model weight
+src/data/*
+src/worker/baseline/output/*
+src/worker/dataset/*
+resource/output/*
+swanlog/
+src/worker/xtuner/*
+tests/label_distribution_test.py

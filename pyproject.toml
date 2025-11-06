@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Drug-Recommend"
+version = "0.1.0"
+description = "A discharge medication recommendation system for metabolic diseases using GLM4-8B-Chat based on Chinese EMR data."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+  { name="Elian", email="lizimo@nuist.edu.cn" }
+]
+
+dependencies = [
+  "torch>=2.1.0",
+  "transformers>=4.44.0",
+  "peft>=0.10.0",
+  "datasets>=2.19.0",
+  "accelerate>=0.30.0",
+  "bitsandbytes>=0.42.0",
+  "swanlab>=0.3.0",
+  "scikit-learn>=1.3.0",
+  "numpy>=1.24.0",
+  "pandas>=2.0.0",
+  "tqdm",
+  "pyyaml",
+  "matplotlib",
+]
+
+[project.urls]
+Homepage = "https://github.com/2Elian/Drug-Recommend"
+Issues = "https://github.com/2Elian/Drug-Recommend/issues"

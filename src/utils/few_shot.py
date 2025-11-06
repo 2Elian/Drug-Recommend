@@ -14,11 +14,11 @@ from dataclasses import dataclass
 from dataclasses import asdict
 from typing import Dict, List, Tuple
 
-from src.models.bases.datatypes import DataType, OutputFormat
+from src.worker.common.datatypes import DataType, OutputFormat
 from src.utils.templates.llm_prompt_baseline import BASELINE_PROMPT, BASELINE_PROMPT_3
-from src.models.bases.base_llm_client import BaseLLMClient
-from src.models.llm.openai_client import OpenAIClient
-from src.models.llm.tokenizer import Tokenizer
+from src.worker.common.base_llm_client import BaseLLMClient
+from src.worker.tool.openai_client import OpenAIClient
+from src.worker.tool.tokenizer import Tokenizer
 from src.utils.helper import calculate_age
 
 

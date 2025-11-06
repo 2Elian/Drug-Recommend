@@ -1,6 +1,14 @@
 from datetime import datetime
 import pandas as pd
 from transformers import AutoTokenizer
+from collections import Counter
+import json
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from itertools import combinations
+from src.worker.tool.tokenizer import Tokenizer
+
 
 def calculate_age(birth_date: str, visit_date: str) -> int:
     birth = datetime.strptime(birth_date, "%Y-%m")
@@ -70,49 +78,3 @@ def build_medical_prompt(data: dict) -> str:
 def token_count(tokenizer, data):
     fin_text = build_medical_prompt(data)
     return tokenizer.count_tokens(fin_text)
-
-if __name__ == '__main__':
-    import json
-    from src.models.llm.tokenizer import Tokenizer
-    from collections import Counter
-    tokenizer = Tokenizer(
-        model_name="/data1/nuist_llm/TrainLLM/ModelCkpt/glm/glm4-8b-chat"
-    )
-    datas = []
-    with open("/data/lzm/DrugRecommend/src/models/baseline/dataset/train.jsonl", 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                try:
-                    item = json.loads(line)
-                    datas.append(item)
-                except json.JSONDecodeError as e:
-                    print(f"error: {e}")
-    num_data = len(datas)
-    t_count = []
-    label_lens = []   # 每条样本标签数量
-    label_counter = Counter()  # 全局标签统计
-
-    for data in datas:
-        token_c = token_count(tokenizer, data)
-        t_count.append(token_c)
-
-        labels = data.get("label") or data.get("labels") or data.get("出院带药列表")
-        if isinstance(labels, list):
-            label_lens.append(len(labels))
-            label_counter.update(labels)
-
-    print(f"样本总数: {len(datas)}")
-    print(f"avg token count: {sum(t_count)/len(t_count):.2f}")
-    print(f"max token count: {max(t_count)}")
-    print(f"min token count: {min(t_count)}")
-
-    if label_lens:
-        print("\n=== 标签数量分布 ===")
-        print(f"平均标签数: {sum(label_lens)/len(label_lens):.2f}")
-        print(f"最少标签数: {min(label_lens)}")
-        print(f"最多标签数: {max(label_lens)}")
-
-        print("\n=== Top 20 药物分布 ===")
-        for drug, count in label_counter.most_common(20):
-            print(f"{drug}: {count}")
