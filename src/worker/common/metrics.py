@@ -6,7 +6,7 @@ def compute_metrics(eval_pred):
     predictions, labels = eval_pred
     probs = 1 / (1 + np.exp(-predictions))
     metrics = {}
-    thresholds = [0.3, 0.4, 0.5]
+    thresholds = [0.3, 0.5, 0.7]
     preds_05 = (probs > 0.5).astype(int)
     
     for threshold in thresholds:
@@ -75,7 +75,7 @@ def compute_metrics(eval_pred):
     
     return metrics
 
-def compute_metrics_fast(predictions, labels, thresholds=[0.3, 0.4, 0.5]):
+def compute_metrics_fast(predictions, labels, thresholds=[0.3, 0.5, 0.7]):
     metrics = {}
     labels = labels.astype(int)
     for threshold in thresholds:

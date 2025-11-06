@@ -18,6 +18,21 @@ import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score
 from swanlab.integration.transformers import SwanLabCallback
 
+"""
+**memory estimate**
+    python -c 'from transformers import AutoModel; \
+    from deepspeed.runtime.zero.stage3 import estimate_zero3_model_states_mem_needs_all_live; \
+    model = AutoModel.from_pretrained("/data1/nuist_llm/TrainLLM/ModelCkpt/glm/glm4-8b-chat"); \
+    estimate_zero3_model_states_mem_needs_all_live(model, num_gpus_per_node=2, num_nodes=1)'
+"""
+
+def load_yaml_config(config_path):
+    try:
+        with open(config_path, 'r') as file:
+            return yaml.safe_load(file)
+    except Exception as e:
+        print(f"Error loading YAML config from {config_path}: {e}")
+        raise e
 
 def find_all_linear_names(model, train_mode, logger):
     assert train_mode in ['lora', 'qlora']
@@ -36,6 +51,9 @@ def find_all_linear_names(model, train_mode, logger):
     
     for name, module in model.named_modules():
         if isinstance(module, cls):
+            if 'drug_classifier' in name or 'classifier' in name:
+                logger.debug(f"跳过分类器: {name}")
+                continue
             if any(pattern in name for pattern in target_patterns):
                 module_name = name.split('.')[-1]
                 lora_module_names.add(module_name)
@@ -53,10 +71,6 @@ def find_all_linear_names(model, train_mode, logger):
 
 
 def get_trainer(args, train_dataset, data_collator, model, logger):
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    torch.cuda.set_device(local_rank)
-    device = torch.device(f"cuda:{local_rank}")
-    logger.info(f"Model moved to device: {device}")
     if args.use_lora:
         logger.info("using lora to train your model")
         target_modules = find_all_linear_names(model, args.train_mode, logger)
@@ -65,21 +79,18 @@ def get_trainer(args, train_dataset, data_collator, model, logger):
             lora_alpha=args.lora_alpha,
             lora_dropout=args.lora_dropout,
             bias="none",
+            modules_to_save=["drug_classifier"],
             target_modules=target_modules,
-            task_type=TaskType.SEQ_CLS,
+            task_type=TaskType.SEQ_CLS, # What is its function?
             inference_mode=False
         )
         model = get_peft_model(model, config)
-    model = model.to(device)
-    for name, param in model.named_parameters():
-        if "drug_adapter" in name or "drug_classifier" in name:
-            param.requires_grad = True
     logger.info("🔍 Trainable parameters after LoRA wrapping:")
     trainable_before = [name for name, param in model.named_parameters() if param.requires_grad]
     for name in trainable_before:
         logger.info(f"  - {name}")
     model.print_trainable_parameters()
-    use_bfloat16 = torch.cuda.is_bf16_supported()
+    # use_bfloat16 = torch.cuda.is_bf16_supported()
     fsdp_config = None
     fsdp_strategy = None
     if args.use_fsdp:
@@ -110,7 +121,7 @@ def get_trainer(args, train_dataset, data_collator, model, logger):
             local_rank=args.local_rank,
             ddp_find_unused_parameters=False,
             fp16=args.fp16,
-            bf16=not args.fp16 and use_bfloat16,
+            # bf16=not args.fp16 and use_bfloat16,
             remove_unused_columns=False,
             dataloader_num_workers=args.dataloader_num_workers,
             dataloader_pin_memory=args.dataloader_pin_memory,
@@ -139,7 +150,7 @@ def get_trainer(args, train_dataset, data_collator, model, logger):
             local_rank=args.local_rank,
             ddp_find_unused_parameters=False,
             fp16=args.fp16,
-            bf16=not args.fp16 and use_bfloat16,
+            bf16=args.bf16,
             per_device_eval_batch_size=2,
             eval_accumulation_steps=4,
             remove_unused_columns=False,

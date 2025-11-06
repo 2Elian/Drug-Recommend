@@ -1,23 +1,23 @@
 import torch
 import torch.nn as nn
+import numpy as np
 import torch.nn.functional as F
 from transformers import AutoModel, AutoConfig, PreTrainedModel
 from transformers.modeling_outputs import SequenceClassifierOutput
 from typing import Optional, List
-from .base_model import FocalLoss, DrugRecommendOutput, DrugBaseModel
+from .base_model import FocalLoss, DrugRecommendOutput, DrugBaseModel, ResampleLoss
 
-class BaselineModel(DrugBaseModel):
+class Q2Model(DrugBaseModel):
+    # 
     def __init__(
         self,
         model_name_or_path: str,
         d_type: str = "bfloat16",
-        num_labels: int = 600,
-        use_focal_loss: bool = True,
-        focal_alpha: float = 0.75,
-        focal_gamma: float = 2.0,
-        pos_weight: Optional[torch.Tensor] = None,
+        num_labels: int = 600,   
         use_metrics: bool = False,
-        is_train: bool = False
+        is_train: bool = False,
+        class_freq: Optional[np.ndarray] = None, 
+        train_num: Optional[int] = None
     ):
         self.num_labels = num_labels
         self.trust_remote_code: bool = True
@@ -38,11 +38,11 @@ class BaselineModel(DrugBaseModel):
         )
         self.drug_classifier  = nn.Linear(self.config.hidden_size, num_labels)
         self.dropout = nn.Dropout(0.1)
-        self.use_focal_loss = use_focal_loss
-        if use_focal_loss:
-            self.loss_fn = FocalLoss(gamma=focal_gamma, alpha=focal_alpha)
-        else:
-            self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        self.loss_fn = ResampleLoss(reweight_func='rebalance', loss_weight=1.0,
+                             focal=dict(focal=True, alpha=0.5, gamma=2),
+                             logit_reg=dict(init_bias=0.05, neg_scale=2.0),
+                             map_param=dict(alpha=0.1, beta=10.0, gamma=0.9), 
+                             class_freq=class_freq, train_num=train_num)
 
     def forward(
         self,
@@ -100,17 +100,14 @@ class BaselineModel(DrugBaseModel):
                 last_token = torch.full((input_ids.size(0),), input_ids.shape[1] - 1, device=input_ids.device)
             pooled_output = hidden_states[torch.arange(hidden_states.size(0)), last_token]
         else:
-            pooled_output = hidden_states[:, -1, :]  # fallback
+            raise
         
         pooled_output = self.dropout(pooled_output)
         logits = self.drug_classifier(pooled_output)  # [batch_size, num_labels]
         
         loss = None
         if labels is not None:
-            if self.use_focal_loss:
-                loss = self.loss_fn(logits, labels.float()) # FocalLoss
-            else:
-                loss = self.loss_fn(logits, labels.float()) # bce loss
+            loss = self.loss_fn(logits, labels.float()) # DB Loss
     
         metrics = None
         if self.use_metrics:

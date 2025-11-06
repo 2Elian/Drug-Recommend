@@ -3,9 +3,9 @@
 echo "🚀 start eval..."
 python -m src.evaluation.evaler \
   --base_model_path /data1/nuist_llm/TrainLLM/ModelCkpt/glm/glm4-8b-chat \
-  --model_path /data/lzm/DrugRecommend/src/worker/baseline/output/drug_prediction_deepspeed \
+  --model_path /data/lzm/DrugRecommend/resource/output/checkpoint_save/baseline_1106 \
   --test_file /data/lzm/DrugRecommend/src/worker/dataset/eval.jsonl \
-  --save_path /data/lzm/DrugRecommend/resource/output/val/predict_resullt.json \
+  --save_path /data/lzm/DrugRecommend/resource/output/val/predict_resullt1106.json \
   --pre_drug_path /data/lzm/DrugRecommend/src/worker/dataset/pre_drug.json \
   --batch_size 1 \
   --gpu_id 2 \

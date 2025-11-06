@@ -17,3 +17,6 @@ src/data/*
 src/worker/baseline/output/*
 src/worker/dataset/*
 resource/output/*
+swanlog/
+src/worker/xtuner/*
+tests/label_distribution_test.py

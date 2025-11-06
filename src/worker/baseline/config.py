@@ -107,7 +107,7 @@ def configuration_parameter():
                         help="Load the best model at the end of training")
     parser.add_argument("--greater_is_better", type=bool, default=True,
                         help="Whether higher metric values are better")
-    parser.add_argument("--dataloader_pin_memory", action="store_true", default=True,
+    parser.add_argument("--dataloader_pin_memory", action="store_true", default=False,
                         help="Pin memory for data loader (improves performance)")
     parser.add_argument("--dataloader_drop_last", action="store_true", default=True,
                         help="Drop last incomplete batch in distributed training")

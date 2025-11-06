@@ -40,36 +40,36 @@ def build_medical_prompt(data: dict) -> str:
     basic_info = []
     gender = data.get("性别")
     if gender is not None:
-        basic_info.append(f"性别：{gender}")
+        basic_info.append(f"<性别>: {gender}")
     birth_date = data.get("出生日期")
     if birth_date is not None:
-        basic_info.append(f"出生日期：{birth_date}")
+        basic_info.append(f"<出生日期>: {birth_date}")
     bmi = data.get("BMI")
     if bmi is not None:
         bmi_status = "肥胖" if bmi >= 28 else "超重" if bmi >= 24 else "正常"
-        basic_info.append(f"BMI：{bmi}（{bmi_status}）")
+        basic_info.append(f"<BMI>: {bmi}（{bmi_status}）")
     ethnicity = data.get("民族")
     if ethnicity is not None:
-        basic_info.append(f"民族：{ethnicity}")
+        basic_info.append(f"<民族>: {ethnicity}")
     if basic_info:
-        sections.append("【患者基本信息】\n" + "，".join(basic_info))
+        sections.append("【患者基本信息】\n" + ":".join(basic_info) + "\n 【患者临床信息】")
     chief_complaint = data.get("主诉")
     if chief_complaint is not None and chief_complaint.strip():
-        sections.append("【主诉】\n" + chief_complaint.strip())
+        sections.append("<主诉>\n" + chief_complaint.strip())
     present_illness = data.get("现病史")
     if present_illness is not None and present_illness.strip():
-        sections.append("【现病史】\n" + present_illness.strip())
+        sections.append("<现病史>\n" + present_illness.strip())
     admission_status = data.get("入院情况")
     if admission_status is not None and admission_status.strip():
-        sections.append("【入院情况】\n" + admission_status.strip())
+        sections.append("<入院情况>\n" + admission_status.strip())
     process_desc = data.get("诊疗过程描述")
     if process_desc is not None and process_desc.strip():
         clean_process = process_desc.strip()
-        sections.append("【诊疗过程】\n" + clean_process)
+        sections.append("<诊疗过程>\n" + clean_process)
     
     past_history = data.get("既往史")
     if past_history is not None and past_history.strip():
-        sections.append("【既往史】\n" + past_history.strip())
+        sections.append("<既往史>\n" + past_history.strip())
     diagnoses = data.get("出院诊断")
     if diagnoses is not None and isinstance(diagnoses, list):
         valid_diagnoses = []
@@ -81,14 +81,16 @@ def build_medical_prompt(data: dict) -> str:
                     valid_diagnoses.append(str(diagnosis))
         
         if valid_diagnoses:
-            sections.append("【出院诊断】\n" + "，".join(valid_diagnoses))
+            sections.append("<|diagnosis_start|><出院诊断>\n" + ":".join(valid_diagnoses)+ "<|diagnosis_end|>")
     if sections:
         prompt = "\n\n".join(sections)
     else:
         raise
     
-    instruction = "根据上述患者医疗信息，预测出院时需要带哪些药物："
-    final_text = prompt + "\n\n" + instruction
+    instruction = """
+                你是一名专业的临床医生，你的任务是针对患者的基础信息与临床信息给出"出院诊断"。
+"""
+    final_text =  instruction + "\n\n" + prompt
     
     return final_text
 
@@ -112,4 +114,26 @@ def process_data_for_drug_prediction(data: dict, tokenizer, max_seq_length: int,
         "input_ids": encoding["input_ids"],
         "attention_mask": encoding["attention_mask"],
         "labels": labels.tolist(),
+    }
+
+def drug_classification_map_fn(example, tokenizer, max_seq_length, num_drugs):
+    """xtuner format"""
+    input_text = build_medical_prompt(example)
+    # Tokenize
+    encoding = tokenizer(
+        input_text,
+        truncation=True,
+        padding=False,
+        max_length=max_seq_length,
+        return_tensors=None,
+        add_special_tokens=True,
+    )
+    drug_to_idx, idx_to_drug, drugs = load_drug_vocab(drug_file_path="/data/lzm/DrugRecommend/src/data/pre_drug.json")
+    drug_list = example.get("出院带药列表", [])
+    labels = create_multihot_labels(drug_list, drug_to_idx, num_drugs)
+    return {
+        "input_ids": encoding["input_ids"],
+        "attention_mask": encoding["attention_mask"],
+        "labels": labels.tolist(),  # 多分类标签
+        "length": len(encoding["input_ids"])
     }

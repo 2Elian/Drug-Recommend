@@ -1,6 +1,6 @@
 import argparse
 import os
-def configuration_parameter():
+def configuration_parameter(yaml_config=None):
     parser = argparse.ArgumentParser(description="LoRA fine-tuning for Drug model")
     parser.add_argument("--model_name_or_path", type=str, default="./model",
                         help="your glm-8b-chat path")
@@ -65,9 +65,11 @@ def configuration_parameter():
                         help="Random seed for reproducibility")
     parser.add_argument("--fp16", action="store_true",
                         help="Use mixed precision (FP16) training")
+    parser.add_argument("--bf16", action="store_true",
+                        help="Use mixed precision (bFP16) training")
     parser.add_argument("--report_to", type=str, default=None,
                         help="Reporting tool for logging (e.g., tensorboard)")
-    parser.add_argument("--dataloader_num_workers", type=int, default=0,
+    parser.add_argument("--dataloader_num_workers", type=int, default=8,
                         help="Number of workers for data loading")
     parser.add_argument("--save_strategy", type=str, default="steps",
                         help="Strategy for saving checkpoints ('steps', 'epoch')")
@@ -78,7 +80,7 @@ def configuration_parameter():
     parser.add_argument("--remove_unused_columns", type=bool, default=True,
                         help="Remove unused columns from the dataset")
     
-    parser.add_argument("--drug_file", type=str, required=True,
+    parser.add_argument("--drug_file", type=str, required=False,
                         help="Path to pre_drug.json file containing drug vocabulary")
     parser.add_argument("--use_focal_loss", action="store_true",
                         help="Use focal loss for imbalanced multi-label classification")
@@ -107,7 +109,7 @@ def configuration_parameter():
                         help="Load the best model at the end of training")
     parser.add_argument("--greater_is_better", type=bool, default=True,
                         help="Whether higher metric values are better")
-    parser.add_argument("--dataloader_pin_memory", action="store_true", default=True,
+    parser.add_argument("--dataloader_pin_memory", action="store_true", default=False,
                         help="Pin memory for data loader (improves performance)")
     parser.add_argument("--dataloader_drop_last", action="store_true", default=True,
                         help="Drop last incomplete batch in distributed training")
@@ -136,7 +138,19 @@ def configuration_parameter():
     
     parser.add_argument("--use_metrics", action="store_true", 
                         help=" ")
-    
+    parser.add_argument("--is_train", action="store_true", 
+                        help=" ")
+    parser.add_argument("--sp_size", type=int, default=2,
+                        help="sp")
+    parser.add_argument("--pack_to_max_length", action="store_true", 
+                        help=" ")
+    parser.add_argument("--use_varlen_attn", action="store_true", 
+                        help=" ")
 
     args = parser.parse_args()
+
+    if yaml_config:
+        for key, value in yaml_config.items():
+            setattr(args, key, value)
+
     return args
