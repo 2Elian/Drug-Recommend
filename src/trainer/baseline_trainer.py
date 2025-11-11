@@ -51,8 +51,8 @@ def fit():
     logger.info(f"Processed dataset: {train_dataset}")
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer, 
-        padding='longest',  # 动态填充到批次中最长序列, 因为在map处理的时候 已经截断了 所以训练的显存会相对稳定
-        # padding=True, 
+        # padding='longest',  # 动态填充到批次中最长序列, 因为在map处理的时候 已经截断了 所以训练的显存会相对稳定
+        padding=True, 
         return_tensors="pt"
     )
     

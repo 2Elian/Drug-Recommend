@@ -94,7 +94,6 @@ def build_medical_prompt(data: dict) -> str:
     
     return final_text
 
-
 def process_data_for_drug_prediction(data: dict, tokenizer, max_seq_length: int, drug_to_idx: dict, num_drugs: int):
     input_text = build_medical_prompt(data)
     # tokenize input_text

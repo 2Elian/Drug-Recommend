@@ -15,7 +15,6 @@ from transformers import (
 )
 import json
 import numpy as np
-from sklearn.metrics import f1_score, precision_score, recall_score
 from swanlab.integration.transformers import SwanLabCallback
 
 """
@@ -48,6 +47,12 @@ def find_all_linear_names(model, train_mode, logger):
         # 'input_layernorm', # optional
         # 'final_layernorm', # optional
     ]
+    # param names of qwen3
+    target_patterns = ["q_proj", "k_proj", "v_proj", "o_proj",
+                        'down_proj',
+                        'up_proj',
+                        'gate_proj'
+                       ]   
     
     for name, module in model.named_modules():
         if isinstance(module, cls):
@@ -133,7 +138,7 @@ def get_trainer(args, train_dataset, data_collator, model, logger):
             weight_decay=args.weight_decay,
             max_grad_norm=args.max_grad_norm,
         )
-    else:
+    elif args.use_deepspeed:
         train_args = TrainingArguments(
             output_dir=args.output_dir,
             per_device_train_batch_size=args.per_device_train_batch_size,
@@ -157,6 +162,33 @@ def get_trainer(args, train_dataset, data_collator, model, logger):
             dataloader_num_workers=args.dataloader_num_workers,
             dataloader_pin_memory=args.dataloader_pin_memory,
             deepspeed=args.deepspeed_config if args.use_deepspeed else None,
+            save_total_limit=args.save_total_limit,
+            warmup_steps=args.warmup_steps,
+            lr_scheduler_type=args.lr_scheduler_type,
+            weight_decay=args.weight_decay,
+            max_grad_norm=args.max_grad_norm,
+        )
+    else:
+        train_args = TrainingArguments(
+            output_dir=args.output_dir,
+            per_device_train_batch_size=args.per_device_train_batch_size,
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            logging_steps=args.logging_steps,
+            num_train_epochs=args.num_train_epochs,
+            save_steps=args.save_steps,
+            learning_rate=args.learning_rate,
+            save_on_each_node=True,
+            gradient_checkpointing=args.gradient_checkpointing,
+            report_to=args.report_to,
+            seed=args.seed,
+            optim=args.optim,
+            local_rank=args.local_rank,
+            ddp_find_unused_parameters=False,
+            fp16=args.fp16,
+            bf16=args.bf16,
+            remove_unused_columns=False,
+            dataloader_num_workers=args.dataloader_num_workers,
+            dataloader_pin_memory=args.dataloader_pin_memory,
             save_total_limit=args.save_total_limit,
             warmup_steps=args.warmup_steps,
             lr_scheduler_type=args.lr_scheduler_type,

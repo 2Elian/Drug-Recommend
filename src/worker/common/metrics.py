@@ -118,3 +118,23 @@ def compute_metrics_fast(predictions, labels, thresholds=[0.3, 0.5, 0.7]):
     })
     
     return metrics
+
+
+def compute_simple_metrics(predictions, labels, threshold=0.5):
+    """只计算F1和Jaccard指标"""
+    labels = labels.astype(int)
+    preds = (predictions > threshold).astype(int)
+
+    intersection = np.sum(labels & preds, axis=1)
+    union = np.sum(labels | preds, axis=1)
+    jaccard = np.divide(intersection, union, out=np.zeros_like(intersection, dtype=float), where=union!=0)
+    avg_jaccard = np.mean(jaccard)
+
+    true_positives = np.sum(labels, axis=1)
+    pred_positives = np.sum(preds, axis=1)
+    precision = np.divide(intersection, pred_positives, out=np.zeros_like(intersection, dtype=float), where=pred_positives!=0)
+    recall = np.divide(intersection, true_positives, out=np.zeros_like(intersection, dtype=float), where=true_positives!=0)
+    f1 = np.divide(2 * precision * recall, precision + recall, out=np.zeros_like(precision), where=(precision + recall)!=0)
+    avg_f1 = np.mean(f1)
+    
+    return avg_f1, avg_jaccard

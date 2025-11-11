@@ -1,26 +1,13 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2025/11/1 20:36
-# @Author  : lizimo@nuist.edu.cn
-# @File    : llm_prompt.py
-# @Description:
-
 
 BASELINE_TEMP: str = """
 你是一名专业的临床药师，负责根据患者病历信息分析出院携带药物方案。你必须严格遵循预设药物列表，确保所有推荐药物都在许可范围内。
 -预设药物列表-
 {pre_drug_list}
 
--目标-
-给定患者的"性别、出生日期、民族、BMI、就诊时间、诊疗过程描述、入院情况、现病史、既往史、主诉、出院诊断"信息，对这些信息进行详细的分析，最终给出该患者出院所有可能应该携带药物的列表
-
 -步骤-
-1. 依据患者性别、年龄、BMI、以及临床信息来分析患者的核心健康问题
-
-2. 基于步骤1识别的核心问题，从预设药物列表中选择合适的出院药物，将每个推荐的药物格式化为("drug"{tuple_delimiter}"你推荐的药物")
-
+1. 依据患者性别、年龄、BMI、诊疗过程描述、入院情况、现病史、既往史、主诉以及出院诊断来推荐患者出院所携带的药物信息
+2. 基于步骤1识别的药物信息，将每个推荐的药物格式化为("drug"{tuple_delimiter}"你推荐的药物")
 3. 以中文返回步骤2中识别出的所有推荐药物的输出列表。使用**{record_delimiter}**作为列表分隔符。
-
 4. 完成后，输出{completion_delimiter}
 
 ################
@@ -97,40 +84,41 @@ IF_LOOP: str = """
 CONTINUE: str = """很多需要推荐的药物在上一次的提取中可能被遗漏了。请在下面使用相同的格式添加它们："""
 
 
-BASELINE_PROMPT_3: str = """
-## 药物安全性验证分析
-### 当前推荐的候选药物
+POST_VERIFICATION_PROMPT = """
+你是一名医学博士研究生，正在参与临床药物审核任务。你将获得一名患者的基本信息、临床状况和一个待审核的候选药物。
+你的任务是根据患者的临床背景判断该候选药物在出院带药中是否**合理、安全且有效**。请综合考虑药物适应症、禁忌症、年龄/体重限制、既往病史等因素，判断该药物是否适用于该患者。
+如果信息不足以确定药物安全合理，请默认输出“NO”。
+
+---
+## 候选药物名称
 {init_drug_recommend}
-### 药物详细描述信息库
+
+## 药物详细说明
 {drug_detail}
 
-### 患者特定信息
+## 患者信息
 - 性别：{sex}
-- 年龄：{years_old}
+- 出生日期：{birth_date}
 - 民族：{ethnicity}
 - BMI：{bmi}
+- 就诊时间：{visit_date}
+- 诊疗过程描述：{diagnosis_process}
+- 入院情况：{admission_info}
+- 现病史：{current_history}
 - 既往史：{past_history}
+- 主诉：{chief_complaint}
 - 出院诊断：{discharge_diagnosis}
 
-## 严格验证标准
-对每个候选药物执行**强制安全性筛查**，出现以下任一情况立即剔除：
-1. **禁忌症匹配**：药物禁忌症与患者当前诊断、基本情况或既往史明确冲突
-2. **特殊人群禁忌**：药物不适合患者的年龄、性别、BMI等特定人群特征
-3. **严重相互作用**：与患者现有疾病或必需药物存在严重相互作用风险
+---
 
-## 输出格式要求（必须严格遵守）
-**只输出最终确认的药物列表**，严格按照以下格式：
+## 输出格式要求
+你只能输出以下两种之一，且必须放在 `<answer>` 标签中，格式如下：
 
-("drug"{tuple_delimiter}"药物1"){record_delimiter}("drug"{tuple_delimiter}"药物2"){record_delimiter}("drug"{tuple_delimiter}"药物3")
+<answer>YES</answer>  
+或  
+<answer>NO</answer>
 
-### 重要格式规则：
-1. 每个药物必须用括号包围
-2. 每个药物格式为：("drug"{tuple_delimiter}"药物名称")
-3. 药物之间用{record_delimiter}分隔
-4. 列表末尾添加{completion_delimiter}
-5. 不要添加任何其他文字、说明或编号
-
-现在请输出最终确认的药物列表：
+不要输出任何解释、理由或附加文本。
 """
 
 BASELINE_PROMPT: dict = {
@@ -139,7 +127,7 @@ BASELINE_PROMPT: dict = {
         "CONTINUE": CONTINUE,
         "IF_LOOP": IF_LOOP,
     },
-    "FIN_PROMPT": BASELINE_PROMPT_3,
+    "POST_V_PROMPT": POST_VERIFICATION_PROMPT,
     "FORMAT": {
         "tuple_delimiter": "<|>",
         "record_delimiter": "##",
