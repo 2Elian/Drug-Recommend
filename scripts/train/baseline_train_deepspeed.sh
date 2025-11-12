@@ -21,16 +21,16 @@ torchrun \
     --drug_file /data/lzm/DrugRecommend/src/worker/dataset/pre_drug.json \
     --output_dir /data/lzm/DrugRecommend/resource/output/checkpoint_save/baseline_1106 \
     --evaluation_strategy steps \
-    --model_name_or_path /data1/nuist_llm/TrainLLM/ModelCkpt/glm/glm4-8b-chat \
-    --max_seq_length 1 \
-    --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 1 \
+    --model_name_or_path /data1/nuist_llm/TrainLLM/ModelCkpt/qwen3-4b/instruct-2507 \
+    --max_seq_length 2500 \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 4 \
     --learning_rate 1e-5 \
     --num_train_epochs 2 \
     --use_focal_loss \
     --use_lora \
     --bf16 \
-    --lora_rank 1 \
+    --lora_rank 8 \
     --lora_alpha 16 \
     --lora_dropout 0.1 \
     --logging_steps 50 \

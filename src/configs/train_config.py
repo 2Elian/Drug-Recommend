@@ -11,8 +11,8 @@ def configuration_parameter(yaml_config=None):
     # train param
     parser.add_argument("--train_file", type=str, default="./data/single_datas.jsonl",
                         help="Path to the training data file in JSONL format")
-    parser.add_argument("--task_name", type=str, default="drug-glm4-8b-lora",
-                        help="your task name, example: drug-glm4-8b-lora")
+    parser.add_argument("--task_name", type=str, default="drug-glm4-9b-lora",
+                        help="your task name, example: drug-glm4-9b-lora")
     parser.add_argument("--task_dataset_name", type=str, default="drug-train-80precent",
                         help="your task dataset name, example: drug-train-80precent")
     parser.add_argument("--task_des", type=str, default="not des",
@@ -146,6 +146,16 @@ def configuration_parameter(yaml_config=None):
                         help=" ")
     parser.add_argument("--use_varlen_attn", action="store_true", 
                         help=" ")
+    
+    parser.add_argument("--ignore_index", type=int, default=-100,
+                        help="")
+    parser.add_argument("--r1", type=float, default=0.6,
+                        help="")
+    parser.add_argument("--r2", type=float, default=2.5,
+                        help="")
+    parser.add_argument("--lm_loss", action="store_true", 
+                        help=" ")
+
 
     args = parser.parse_args()
 

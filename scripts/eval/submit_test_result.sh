@@ -10,6 +10,6 @@ python -m src.evaluation.evaler \
   --pre_drug_path /data/lzm/DrugRecommend/src/worker/dataset/pre_drug.json \
   --batch_size 1 \
   --gpu_id 2 \
-  --max_seq_length 2000 \
+  --max_seq_length 2500 \
   --threshold 0.5 \
   --is_submit

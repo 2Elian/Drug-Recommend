@@ -17,6 +17,7 @@ from src.worker.common.metrics import compute_metrics_fast
 from src.worker.common.common_utils import setup_device
 
 def load_model_and_tokenizer(model_path, device, logger, pre_drug_path, base_model_path=None):
+    # TODO 如果重构了baseline模型 这里的推理加载模型的逻辑就不对了 需要重新写！
     from peft import PeftModel, PeftConfig
     from src.worker.baseline.model import GenericForMultiLabelClassification
     config = PeftConfig.from_pretrained(model_path)

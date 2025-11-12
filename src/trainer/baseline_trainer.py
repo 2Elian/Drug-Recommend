@@ -6,11 +6,11 @@ from transformers import (
 )
 from transformers import DataCollatorWithPadding
 from src.utils.log import get_logger
-from src.worker.common.data_process import process_data_for_drug_prediction, load_drug_vocab
+from src.worker.common.data_process import process_data_for_drug_prediction, load_drug_vocab, drug_classification_map_fn
 from src.worker.common.common_utils import save_config
 from src.configs.train_config import configuration_parameter
 from src.worker.global_models.baseline import BaselineModel
-from src.trainer.trainer_util import get_trainer
+from src.trainer.trainer_util import get_trainer, DrugTrainer
 
 def fit():
     args = configuration_parameter()
@@ -33,12 +33,13 @@ def fit():
     
     logger.info("[Preparation] Processing Data")
     data = pd.read_json(args.train_file, lines=True)
+    val_data = pd.read_json(args.eval_file, lines=True)
     # val_data = pd.read_json(args.eval_file, lines=True)
     logger.info(f"Loaded {len(data)} training examples")
     train_ds = Dataset.from_pandas(data)
-    # val_ds = Dataset.from_pandas(val_data)
+    val_ds = Dataset.from_pandas(val_data)
     train_dataset = train_ds.map(
-        process_data_for_drug_prediction,
+        drug_classification_map_fn if args.lm_loss else process_data_for_drug_prediction,
         fn_kwargs={
             "tokenizer": tokenizer, 
             "max_seq_length": args.max_seq_length,
@@ -47,28 +48,43 @@ def fit():
         },
         remove_columns=train_ds.column_names
     )
+    eval_dataset = val_ds.map(
+        drug_classification_map_fn if args.lm_loss else process_data_for_drug_prediction,
+        fn_kwargs={
+            "tokenizer": tokenizer, 
+            "max_seq_length": args.max_seq_length,
+            "drug_to_idx": drug_to_idx,
+            "num_drugs": num_drugs
+        },
+        remove_columns=val_ds.column_names
+    )
     
     logger.info(f"Processed dataset: {train_dataset}")
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer, 
-        padding='longest',  # 动态填充到批次中最长序列, 因为在map处理的时候 已经截断了 所以训练的显存会相对稳定
-        # padding=True, 
+        # padding='longest',  # 动态填充到批次中最长序列, 因为在map处理的时候 已经截断了 所以训练的显存会相对稳定
+        padding=True, 
         return_tensors="pt"
     )
-    
+    if args.bf16:
+        dtype = "bfloat16"
+    else:
+        dtype = "float16"
     logger.info("[Start] Model Initialization")
     model = BaselineModel(
+        args=args,
         model_name_or_path=model_path,
         num_labels=num_drugs,
         use_focal_loss=args.use_focal_loss,
         focal_alpha=args.focal_alpha,
+        d_type = dtype,
         focal_gamma=args.focal_gamma,
         use_metrics=args.use_metrics,
         is_train=args.is_train,
     )
-    
+    model.print_trainable_parameters()
     logger.info("[Start] Training")
-    trainer = get_trainer(args, train_dataset, data_collator, model, logger)
+    trainer = get_trainer(args, train_dataset, eval_dataset, data_collator, model, logger)
     trainer.train()
     
     final_save_path = join(args.output_dir)

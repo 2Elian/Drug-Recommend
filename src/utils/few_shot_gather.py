@@ -12,7 +12,7 @@ from typing import Dict, List, Tuple
 import aiofiles
 
 from src.worker.common.datatypes import DataType, OutputFormat
-from src.utils.templates.llm_prompt_baseline import BASELINE_PROMPT, BASELINE_PROMPT_3
+from src.utils.templates.llm_prompt_baseline import BASELINE_PROMPT
 from src.worker.common.base_llm_client import BaseLLMClient
 from src.worker.tool.openai_client import OpenAIClient
 from src.worker.tool.tokenizer import Tokenizer
@@ -96,27 +96,27 @@ class Generator:
             # step 4: parse the result
             init_drug_recommend = parse_result(final_result)
             
-            # step5:
-            drug_dict = {item["drug"]: item["des"] for item in self.pre_drug_mapping}
-            drug_detail = [
-                {"drug": drug, "des": drug_dict.get(drug, "[无描述]")}
-                for drug in init_drug_recommend
-            ]
-            finally_check_prompt = BASELINE_PROMPT["FIN_PROMPT"].format(
-                **BASELINE_PROMPT["FORMAT"], init_drug_recommend=init_drug_recommend, drug_detail=drug_detail, 
-                sex=sex, years_old=calculate_age(birth_date, visit_date), ethnicity=ethnicity, bmi=bmi,
-                past_history=past_history, discharge_diagnosis=discharge_diagnosis)
-            check_result = await self.llm_client.generate_answer(finally_check_prompt)
+            # # step5:
+            # drug_dict = {item["drug"]: item["des"] for item in self.pre_drug_mapping}
+            # drug_detail = [
+            #     {"drug": drug, "des": drug_dict.get(drug, "[无描述]")}
+            #     for drug in init_drug_recommend
+            # ]
+            # finally_check_prompt = BASELINE_PROMPT["FIN_PROMPT"].format(
+            #     **BASELINE_PROMPT["FORMAT"], init_drug_recommend=init_drug_recommend, drug_detail=drug_detail, 
+            #     sex=sex, years_old=calculate_age(birth_date, visit_date), ethnicity=ethnicity, bmi=bmi,
+            #     past_history=past_history, discharge_diagnosis=discharge_diagnosis)
+            # check_result = await self.llm_client.generate_answer(finally_check_prompt)
             
-            # step6: parse finally result to OutputFormat
-            predict_list = parse_result(check_result)
-            self.logger.info(f"Patient {id} predict_list: {predict_list}")
+            # # step6: parse finally result to OutputFormat
+            # predict_list = parse_result(check_result)
+            self.logger.info(f"Patient {id} predict_list: {init_drug_recommend}")
             
             predict = OutputFormat(
                 id=id, patient_id=patient_id, sex=sex, birth_date=birth_date, ethnicity=ethnicity,
                 bmi=bmi, visit_date=visit_date, diagnosis_process=diagnosis_process, admission_info=admission_info,
                 current_history=current_history, past_history=past_history, chief_complaint=chief_complaint, 
-                discharge_diagnosis=discharge_diagnosis, predict_list=predict_list
+                discharge_diagnosis=discharge_diagnosis, predict_list=init_drug_recommend
             )
             return predict
 
@@ -155,6 +155,23 @@ FIELD_MAP = {
     "predict_list": "出院带药列表"
 }
 
+FIELD_MAP1 = {
+    "id": "患者序号",
+    "patient_id": "ID",
+    "sex": "性别",
+    "birth_date": "出生日期",
+    "ethnicity": "民族",
+    "bmi": "BMI",
+    "visit_date": "就诊时间",
+    "diagnosis_process": "诊疗过程描述",
+    "admission_info": "入院情况",
+    "current_history": "现病史",
+    "past_history": "既往史",
+    "chief_complaint": "主诉",
+    "discharge_diagnosis": "出院诊断",
+    "predict_list": "prediction"
+}
+
 
 async def process_single_patient(generator, data, output_file):
     """处理单个患者并写入结果"""
@@ -177,10 +194,8 @@ async def process_single_patient(generator, data, output_file):
         result: OutputFormat = await generator.generate(data_type)
         result_dict = asdict(result)
         result_dict_zh = {FIELD_MAP[k]: v for k, v in result_dict.items()}
-        
-        # 使用 aiofiles 异步写入
         async with aiofiles.open(output_file, "a", encoding="utf-8") as out_f:
-            await out_f.write(json.dumps(result_dict_zh, ensure_ascii=False) + "\n")
+            await out_f.write(json.dumps(result_dict_zh, ensure_ascii=False) + ",\n")
         
         return True
     except Exception as e:
@@ -189,53 +204,40 @@ async def process_single_patient(generator, data, output_file):
 
 
 async def main():
-    # 初始化组件
     tokenizer_instance = Tokenizer(
         model_name="/data1/nuist_llm/TrainLLM/ModelCkpt/glm/glm4-8b-chat"
     )
 
     synthesizer_llm_client = OpenAIClient(
-        model_name="/data1/nuist_llm/TrainLLM/ModelCkpt/glm/glm4-8b-chat",
-        api_key="dummy",
+        model_name="glm4-9b",
+        api_key="NuistMathAutoModelForCausalLM",
         base_url="http://172.16.107.15:23333/v1",
         tokenizer=tokenizer_instance,
     )
     
-    # 加载数据
     with open("/data/lzm/DrugRecommend/src/data/pre_drug_mapping.json", "r", encoding="utf-8") as g:
         pre_drug_mapping = json.load(g)
     with open("/data/lzm/DrugRecommend/src/data/pre_drug.json", "r", encoding="utf-8") as p:
         pre_drug_list = json.load(p)
-    
-    # 创建生成器，设置并发数为3-5（根据您的API限制调整）
     generator_instance = Generator(
         llm_client=synthesizer_llm_client,
         tokenizer_instance=tokenizer_instance, 
         max_loop=3,
         pre_drug_list=pre_drug_list,
         pre_drug_mapping=pre_drug_mapping,
-        max_concurrent=3  # 控制并发数，避免API过载
+        max_concurrent=10  # 控制并发数
     )
-    
-    output_file = "/data/lzm/DrugRecommend/src/data/CDrugRed-A-v1/CDrugRed_predict-val.jsonl"
-    data_path = "/data/lzm/DrugRecommend/src/data/CDrugRed-A-v1/CDrugRed_val_split_train_18present.jsonl"
-    
-    # 读取所有数据
+    output_file = "/data/lzm/DrugRecommend/resource/output/submit/few_shot_glm4.json"
+    data_path = "/data/lzm/DrugRecommend/src/data/CDrugRed-B-v1/CDrugRed_test-B.jsonl"
     with open(data_path, "r", encoding="utf-8") as f:
         all_data = [json.loads(line) for line in f if line.strip()]
     
     logging.info(f"Total patients to process: {len(all_data)}")
-    
-    # 并发处理所有患者
     tasks = []
     for data in all_data:
         task = process_single_patient(generator_instance, data, output_file)
         tasks.append(task)
-    
-    # 等待所有任务完成
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # 统计结果
     success_count = sum(1 for r in results if r is True)
     logging.info(f"Processing completed: {success_count}/{len(all_data)} successful")
 
