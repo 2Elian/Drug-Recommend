@@ -1,66 +1,76 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import bitsandbytes as bnb
 import torch.nn.functional as F
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass, field
 from transformers.modeling_outputs import SequenceClassifierOutput
-from transformers import AutoModel, AutoConfig, PreTrainedModel
+from transformers import AutoModel, PreTrainedModel
+from peft import LoraConfig, get_peft_model
 
+from src.utils.log import get_logger
 
 class DrugBaseModel(PreTrainedModel):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, model_name: str,  lora_r=8, lora_alpha=16, lora_dropout=0.05, dtype: str = "bfloat16", train_mode: str = "lora"):
+        super().__init__(config=config)
+        self.logger = get_logger(name="DrugBasePreTrainedModel")
         self.config = config
-    # TODO: 基于Xtuner-v1集成 TP SP 和 loss相关操作
-
-    def compute_metrics(self, predictions, labels, thresholds=[0.3, 0.4, 0.5]):
-        metrics = {}
-        labels = labels.astype(int)
-        for threshold in thresholds:
-            preds = (predictions > threshold).astype(int)
-            intersection = np.sum(labels & preds, axis=1)
-            union = np.sum(labels | preds, axis=1)
-            true_positives = np.sum(labels, axis=1)
-            pred_positives = np.sum(preds, axis=1)
-            jaccard = np.divide(intersection, union, out=np.zeros_like(intersection, dtype=float), where=union!=0)
-            precision = np.divide(intersection, pred_positives, out=np.zeros_like(intersection, dtype=float), where=pred_positives!=0)
-            recall = np.divide(intersection, true_positives, out=np.zeros_like(intersection, dtype=float), where=true_positives!=0)
-            f1 = np.divide(2 * precision * recall, precision + recall, out=np.zeros_like(precision), where=(precision + recall)!=0)
-            
-            avg_jaccard = np.mean(jaccard)
-            avg_precision = np.mean(precision)
-            avg_recall = np.mean(recall)
-            avg_f1 = np.mean(f1)
-            score = 0.5 * (avg_jaccard + avg_f1)
-
-            metrics.update({
-                f"jaccard_th{threshold}": avg_jaccard,
-                f"precision_avg_th{threshold}": avg_precision,
-                f"recall_avg_th{threshold}": avg_recall,
-                f"f1_avg_th{threshold}": avg_f1,
-                f"score_th{threshold}": score,
-            })
+        self.backbone = AutoModel.from_pretrained(model_name, dtype=dtype, trust_remote_code=True)
+        self.hidden_size = self.backbone.config.hidden_size
+        lora_config = LoraConfig(
+            r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            target_modules=self._find_all_target_module(self.backbone, train_mode=train_mode),
+            bias="none", # 'all' or 'lora_only'
+            # use_rslora=True # while it is True，will use Rank-Stabilized LoRA，该算法会将适配器缩放因子设置为lora_alpha/math.sqrt(r)，因为实践证明这样效果更好。否则，它将使用原始默认值lora_alpha/r
+            # modules_to_save=["word_embeddings", "output_layer"] # 这是一个选项，可以让embedding层和输出层也参与训练
+        )
+        self.backbone = get_peft_model(self.backbone, lora_config)
+        # self.backbone.print_trainable_parameters()
+    
+    def _find_all_target_module(self, model, train_mode):
+        assert train_mode in ['lora', 'qlora']
+        cls = bnb.nn.Linear4bit if train_mode == 'qlora' else nn.Linear
+        lora_module_names = set()
+        # param names of glm4
+        target_patterns = [
+            'query_key_value',
+            'dense',
+            'dense_h_to_4h',
+            'dense_4h_to_h',
+        ]
+        for name, module in model.named_modules():
+            if isinstance(module, cls):
+                if any(pattern in name for pattern in target_patterns):
+                    module_name = name.split('.')[-1]
+                    lora_module_names.add(module_name)
+                    # self.logger.info(f"Candidate LoRA module -> {name} -> {module_name}")
+        if 'lm_head' in lora_module_names:
+            self.logger.warning("find lm_head layer in lora_module_names, we will remove it")
+            lora_module_names.remove('lm_head')
+        if 'output_layer' in lora_module_names:
+            self.logger.warning("find output_layer layer in lora_module_names, we will remove it")
+            lora_module_names.remove('output_layer')
         
-        return metrics
+        lora_module_names = list(lora_module_names)
+        self.logger.info(f'GLM LoRA target module names: {lora_module_names}')
+        return lora_module_names
 
 
 @dataclass
-class DrugRecommendOutput(SequenceClassifierOutput):
-    metrics: Optional[Dict[str, Any]] = None
-
-@dataclass
-class DrugBertOutput:
+class DrugRecommendOutput:
+    all_loss: Optional[torch.FloatTensor] = None
+    lm_loss: Optional[torch.FloatTensor] = None
     cls_loss: Optional[torch.FloatTensor] = None
-    ndf_loss: Optional[torch.FloatTensor] = None
-    cmm_loss: Optional[torch.FloatTensor] = None
-    mlm_loss: Optional[torch.FloatTensor] = None
 
 @dataclass
-class DrugBertEvalOutput:
-    logits_mode_1: Optional[torch.FloatTensor] = None
-    logits_mode_2: Optional[torch.FloatTensor] = None
-    logits_mode_fusion: Optional[torch.FloatTensor] = None
+class DrugRecommendEvalOutput:
+    # TODO
+    cls_loss: Optional[torch.FloatTensor] = None
+    logits: Optional[torch.FloatTensor] = None
+
 
 
 class FocalLoss(nn.Module):
