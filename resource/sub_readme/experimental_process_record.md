@@ -43,17 +43,13 @@
 ## Q2. 长尾分布问题
 ![](../images/label_longtail_custom.png)
 
-## Q3. 药品之间的相互排斥性
-
-ing
-
 ![](../images/label_cooccurrence_top30.png)
 
-## Q4. 多任务学习
+## Q3. 多任务学习
 ing
 
-## Q5. 多细粒度特征分类
+## Q4. 多细粒度特征分类
 ing
 
-## Q6. 标签不完备
+## Q5. 标签不完备与标签之间的相互排斥性
 ing

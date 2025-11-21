@@ -6,7 +6,7 @@ from transformers import (
 )
 from swanlab.integration.transformers import SwanLabCallback
 
-from src.worker.common.metrics import compute_metrics
+from src.worker.common.metrics import compute_metrics, genercommend_compute_metrics
 
 """
 **memory estimate**
@@ -24,7 +24,7 @@ def load_yaml_config(config_path):
         print(f"Error loading YAML config from {config_path}: {e}")
         raise e
 
-def get_trainer(args, train_dataset, eval_dataset, data_collator, model, logger):
+def get_trainer(args, train_dataset, eval_dataset, data_collator, model, is_gener):
     """
     evaluation_strategy="steps",   # 或 "epoch"
     eval_steps=500,                # 每500步验证一次
@@ -32,6 +32,11 @@ def get_trainer(args, train_dataset, eval_dataset, data_collator, model, logger)
     metric_for_best_model="final_score",
     greater_is_better=True,
 """
+    from src.worker.common.metrics import GLOBAL_TOKENIZER
+    if hasattr(model, 'tokenizer') and model.tokenizer is not None:
+        GLOBAL_TOKENIZER = model.tokenizer
+    else:
+        raise AttributeError
     # use_bfloat16 = torch.cuda.is_bf16_supported()
     train_args = TrainingArguments(
         # save path and batch_size
@@ -72,7 +77,6 @@ def get_trainer(args, train_dataset, eval_dataset, data_collator, model, logger)
         "lora_alpha": args.lora_alpha if args.use_lora else "none",
         "lora_dropout": args.lora_dropout if args.use_lora else "none",
         "dataset": args.task_dataset_name,
-        "num_drugs": model.num_labels,
         "use_focal_loss": args.use_focal_loss,
         "learning_rate": args.learning_rate,
     }
@@ -84,8 +88,16 @@ def get_trainer(args, train_dataset, eval_dataset, data_collator, model, logger)
         workspace=None,
         config=swanlab_config,
     )
-    # TODO @2Elian: record metrics of train processing.
-    trainer = DrugTrainer(
+
+    trainer = DrugGenerRecommendTrainer(
+        model=model,
+        args=train_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        data_collator=data_collator,
+        callbacks=[swanlab_callback],
+        compute_metrics=genercommend_compute_metrics,
+    ) if is_gener else DrugTrainer(
         model=model,
         args=train_args,
         train_dataset=train_dataset,
@@ -99,14 +111,22 @@ def get_trainer(args, train_dataset, eval_dataset, data_collator, model, logger)
 
 class DrugTrainer(Trainer):
     # TODO 自定义计算模型loss + 训练过程评估展示到swanlab
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         outputs = model(**inputs)
         loss = outputs.all_loss
-        # 额外日志信息
-        if hasattr(outputs, "cls_loss") and outputs.cls_loss is not None:
-            self.log({"cls_loss": outputs.cls_loss.detach().item()})
-        if hasattr(outputs, "lm_loss") and outputs.lm_loss is not None:
-            self.log({"lm_loss": outputs.lm_loss.detach().item()})
+        step = self.state.global_step
+        should_log = (
+            step > 0 
+            and self.args.logging_strategy == "steps"
+            and (step % self.args.logging_steps == 0)
+        )
+
+        if should_log:
+            if hasattr(outputs, "cls_loss") and outputs.cls_loss is not None:
+                self.log({"cls_loss": outputs.cls_loss.detach().item()})
+            if hasattr(outputs, "lm_loss") and outputs.lm_loss is not None:
+                self.log({"lm_loss": outputs.lm_loss.detach().item()})
+
         return (loss, outputs) if return_outputs else loss
 
     def prediction_step(
@@ -121,9 +141,47 @@ class DrugTrainer(Trainer):
 
         with torch.no_grad():
             outputs = model.drug_eval(**inputs)
-            loss = outputs.cls if has_labels else None
+            loss = outputs.cls_loss if has_labels else None
         logits = outputs.logits if hasattr(outputs, "logits") else None
         labels = inputs["labels"] if has_labels else None
         if prediction_loss_only:
             return (loss, None, None)
         return (loss, logits, labels)
+    
+class DrugGenerRecommendTrainer(Trainer):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        outputs = model(**inputs)
+        loss = outputs.all_loss
+        step = self.state.global_step
+        should_log = (
+            step > 0 
+            and self.args.logging_strategy == "steps"
+            and (step % self.args.logging_steps == 0)
+        )
+
+        if should_log:
+            if hasattr(outputs, "cls_loss") and outputs.cls_loss is not None:
+                self.log({"cls_loss": outputs.cls_loss.detach().item()})
+            if hasattr(outputs, "lm_loss") and outputs.lm_loss is not None:
+                self.log({"lm_loss": outputs.lm_loss.detach().item()})
+
+        return (loss, outputs) if return_outputs else loss
+
+    def prediction_step(
+        self,
+        model,
+        inputs,
+        prediction_loss_only: bool,
+        ignore_keys=None,
+    ):
+        has_labels = "labels" in inputs
+        labels = inputs["labels"].clone() if has_labels else None
+        inputs = self._prepare_inputs(inputs)
+        with torch.no_grad():
+            outputs = model.drug_eval(**inputs) 
+            loss = None
+            if has_labels and not prediction_loss_only:
+                loss_outputs = model(**inputs)
+                loss = loss_outputs.all_loss
+        generated_tokens = outputs.logits 
+        return (loss, generated_tokens, labels)

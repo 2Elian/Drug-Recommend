@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass, field
 from transformers.modeling_outputs import SequenceClassifierOutput
-from transformers import AutoModel, PreTrainedModel
+from transformers import AutoModel, PreTrainedModel, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model
 
 from src.utils.log import get_logger
@@ -58,6 +58,59 @@ class DrugBaseModel(PreTrainedModel):
         self.logger.info(f'GLM LoRA target module names: {lora_module_names}')
         return lora_module_names
 
+class DrugLmBaseModel(PreTrainedModel):
+    def __init__(self, config, tokenizer, model_name: str,  lora_r=8, lora_alpha=16, lora_dropout=0.05, dtype: str = "bfloat16", train_mode: str = "lora"):
+        super().__init__(config=config)
+        self.logger = get_logger(name="DrugBasePreTrainedModel")
+        self.config = config
+        self.backbone = AutoModelForCausalLM.from_pretrained(
+                        model_name, dtype=dtype, trust_remote_code=True
+                    )
+        original_size = self.backbone.get_input_embeddings().weight.shape
+        self.backbone.resize_token_embeddings(len(tokenizer))
+        new_size = self.backbone.get_input_embeddings().weight.shape
+        self.logger.info(f"[Vocab resize: {original_size} -> {new_size}, expected: {len(tokenizer)}")
+        self.hidden_size = self.backbone.config.hidden_size
+        lora_config = LoraConfig(
+            r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            target_modules=self._find_all_target_module(self.backbone, train_mode=train_mode),
+            bias="none", # 'all' or 'lora_only'
+            task_type='CAUSAL_LM',
+            # use_rslora=True # while it is True，will use Rank-Stabilized LoRA，该算法会将适配器缩放因子设置为lora_alpha/math.sqrt(r)，因为实践证明这样效果更好。否则，它将使用原始默认值lora_alpha/r
+            modules_to_save=["word_embeddings", "output_layer"] # 这是一个选项，可以让embedding层和输出层也参与训练
+        )
+        self.backbone = get_peft_model(self.backbone, lora_config)
+        # self.backbone.print_trainable_parameters()
+    
+    def _find_all_target_module(self, model, train_mode):
+        assert train_mode in ['lora', 'qlora']
+        cls = bnb.nn.Linear4bit if train_mode == 'qlora' else nn.Linear
+        lora_module_names = set()
+        # param names of glm4
+        target_patterns = [
+            'query_key_value',
+            # 'dense',
+            # 'dense_h_to_4h',
+            # 'dense_4h_to_h',
+        ]
+        for name, module in model.named_modules():
+            if isinstance(module, cls):
+                if any(pattern in name for pattern in target_patterns):
+                    module_name = name.split('.')[-1]
+                    lora_module_names.add(module_name)
+                    # self.logger.info(f"Candidate LoRA module -> {name} -> {module_name}")
+        # if 'lm_head' in lora_module_names:
+        #     self.logger.warning("find lm_head layer in lora_module_names, we will remove it")
+        #     lora_module_names.remove('lm_head')
+        # if 'output_layer' in lora_module_names:
+        #     self.logger.warning("find output_layer layer in lora_module_names, we will remove it")
+        #     lora_module_names.remove('output_layer')
+        
+        lora_module_names = list(lora_module_names)
+        self.logger.info(f'GLM LoRA target module names: {lora_module_names}')
+        return lora_module_names
 
 @dataclass
 class DrugRecommendOutput:
@@ -71,7 +124,39 @@ class DrugRecommendEvalOutput:
     cls_loss: Optional[torch.FloatTensor] = None
     logits: Optional[torch.FloatTensor] = None
 
+class MultiLabelCircleLoss(nn.Module):
+    def __init__(self, reduction="mean", inf=1e12):
+        """CircleLoss of MultiLabel
+        args:
+            reduction: str, Specifies the reduction to apply to the output, 输出形式. 
+                            eg.``'none'`` | ``'mean'`` | ``'sum'``. ``'none'``
+            inf: float, Minimum of maths, eg. 1e12
+        returns:
+            Tensor of loss.
+        examples:
+            >>> label, logits = [[1, 1, 1, 1], [0, 0, 0, 1]], [[0, 1, 1, 0], [1, 0, 0, 1],]
+            >>> label, logits = torch.tensor(label).float(), torch.tensor(logits).float()
+            >>> loss = MultiLabelCircleLoss()(logits, label)
+        """
+        super(MultiLabelCircleLoss, self).__init__()
+        self.reduction = reduction
+        self.inf = inf  # 无穷大
 
+    def forward(self, logits, labels):
+        logits = (1 - 2 * labels) * logits              # <3, 4>
+        logits_neg = logits - labels * self.inf         # <3, 4>
+        logits_pos = logits - (1 - labels) * self.inf   # <3, 4>
+        zeros = torch.zeros_like(logits[..., :1])       # <3, 1>
+        logits_neg = torch.cat([logits_neg, zeros], dim=-1)  # <3, 5>
+        logits_pos = torch.cat([logits_pos, zeros], dim=-1)  # <3, 5>
+        neg_loss = torch.logsumexp(logits_neg, dim=-1)       # <3, >
+        pos_loss = torch.logsumexp(logits_pos, dim=-1)       # <3, >
+        loss = neg_loss + pos_loss
+        if "mean" == self.reduction:
+            loss = loss.mean()
+        else:
+            loss = loss.sum()
+        return loss
 
 class FocalLoss(nn.Module):
     def __init__(self, gamma=2.0, alpha=0.75, reduction="mean"):
@@ -319,9 +404,9 @@ class ResampleLoss(nn.Module):
         device = device or gt_labels.device
         if self.freq_inv is None:
             return None
-        freq_inv = self.freq_inv.to(device).view(1, -1)  # [1, C]
-        repeat_rate = (gt_labels.float() * freq_inv).sum(dim=1, keepdim=True) + self.eps  # [B,1]
-        pos_weight = freq_inv / repeat_rate  # [B, C]
+        freq_inv = self.freq_inv.to(device).view(1, -1)  # [1, C] 类别越稀有 这个权重就越大
+        repeat_rate = (gt_labels.float() * freq_inv).sum(dim=1, keepdim=True) + self.eps  # [B,1] 一个样本如果包含多个稀有类，则 repeat_rate 更大
+        pos_weight = freq_inv / repeat_rate  # [B, C] 让稀有类别的正样本权重更高
         mapped = torch.sigmoid(self.map_beta * (pos_weight - self.map_gamma)) + self.map_alpha
         return mapped
 

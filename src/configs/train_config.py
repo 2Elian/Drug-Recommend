@@ -155,6 +155,8 @@ def configuration_parameter(yaml_config=None):
                         help="")
     parser.add_argument("--lm_loss", action="store_true", 
                         help=" ")
+    parser.add_argument("--is_gener", action="store_true", 
+                        help=" ")
 
 
     args = parser.parse_args()
