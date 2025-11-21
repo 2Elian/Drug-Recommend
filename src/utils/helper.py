@@ -1,13 +1,5 @@
 from datetime import datetime
-import pandas as pd
-from transformers import AutoTokenizer
-from collections import Counter
-import json
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from itertools import combinations
-from src.worker.tool.tokenizer import Tokenizer
+
 
 
 def calculate_age(birth_date: str, visit_date: str) -> int:
@@ -18,6 +10,20 @@ def calculate_age(birth_date: str, visit_date: str) -> int:
         age -= 1
     return age
 
-def token_count(tokenizer, data):
-    fin_text = build_medical_prompt(data)
-    return tokenizer.count_tokens(fin_text)
+def get_bmi_description(bmi_value: float, default: str) -> str:
+    """根据 BMI 值返回描述（使用中国标准）"""
+    if bmi_value is None:
+        return default
+    try:
+        if bmi_value >= 28:
+            return "肥胖"
+        elif bmi_value >= 24:
+            return "超重"
+        elif bmi_value >= 18.5:
+            return "正常"
+        else:
+            return "体重过轻"
+    except (TypeError, ValueError):
+        return default
+
+

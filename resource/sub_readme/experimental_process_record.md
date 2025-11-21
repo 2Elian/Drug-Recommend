@@ -3,9 +3,7 @@
 ## Q1. Base-Decoder vs Base-Encoder Model?
 
 
-### 1. Base-Decoder Model
-首先，我们想探讨，模型的hidden_state在接入分类器之前 是否需要做一个线性映射
-假设Base Mode的hidden_state是h, 我们进行了如下实验:
+### 1. 纯使用lm_head建模
 
 1. 测试集(none代表测试集官网看不到非sota的结果, 即代表该方法没有超过之前的方法)
 
