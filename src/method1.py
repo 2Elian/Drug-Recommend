@@ -1,3 +1,124 @@
+# 覆盖比策略权重0.5，诊断匹配0.2，TF-IDF 0.3
+
+class EnsembleDrugRecommender:
+    def __init__(self, retrieval):
+        self.retrieval = retrieval
+        self.strategies = [
+            self.coverage_based_strategy,
+            self.diagnosis_match_strategy,
+            self.tfidf_based_strategy,  # 新增方法2
+        ]
+    
+    def recommend(self, test_diagnoses, min_frequency=1):
+        """集成推荐"""
+        base_recommendations = self.retrieval.get_drugs_by_diagnoses(test_diagnoses, min_frequency=min_frequency)
+        
+        if not base_recommendations:
+            return []
+        
+        # 🔥 完善方法1：在基础推荐中直接计算并存储cover_ratio
+        self._enhance_recommendations_with_cover_ratio(base_recommendations, test_diagnoses)
+        
+        # 🔥 完善方法1：先按cover_ratio和frequency双重排序
+        pre_sorted_recommendations = self._pre_sort_by_cover_ratio_and_frequency(base_recommendations)
+        
+        # 应用多种策略
+        strategy_scores = {}
+        for strategy in self.strategies:
+            scores = strategy(pre_sorted_recommendations, test_diagnoses)
+            for drug, score in scores.items():
+                if drug not in strategy_scores:
+                    strategy_scores[drug] = []
+                strategy_scores[drug].append(score)
+        
+        # 集成得分（加权平均，给覆盖比更高权重）
+        final_scores = {}
+        for drug, scores in strategy_scores.items():
+            # 加权平均：覆盖比策略权重0.5，诊断匹配0.2，TF-IDF 0.3 目前最好的结果AVG_Jaccard: 0.552691 AVG_Precision: 0.805081 AVG_Recall: 0.584996
+            # 与测试集精度损失占比--> Jaccar是4.18 P是2.59  R是3.2
+            weights = [0.5, 0.2, 0.3]
+            weighted_score = sum(score * weight for score, weight in zip(scores, weights))
+            final_scores[drug] = weighted_score
+        
+        # 排序和选择
+        sorted_drugs = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        # 选择策略：基于得分差距的动态选择
+        selected_drugs = self.dynamic_selection(sorted_drugs)
+        
+        return selected_drugs
+    
+    def _enhance_recommendations_with_cover_ratio(self, recommendations, test_diagnoses):
+        """完善方法1：为每个药物计算并存储覆盖比"""
+        for drug_info in recommendations:
+            drug_diseases = set(drug_info["treating_diagnoses"])
+            target_diseases = set(test_diagnoses)
+            drug_info["cover_ratio"] = len(drug_diseases & target_diseases) / len(target_diseases)
+    
+    def _pre_sort_by_cover_ratio_and_frequency(self, recommendations):
+        """完善方法1：先按覆盖比和频率双重排序"""
+        return sorted(
+            recommendations,
+            key=lambda x: (-x["cover_ratio"], -x["frequency"])  # 覆盖比降序，频率降序
+        )
+    
+    def coverage_based_strategy(self, recommendations, test_diagnoses):
+        """基于覆盖率的策略 - 使用存储的cover_ratio"""
+        scores = {}
+        for drug_info in recommendations:
+            scores[drug_info['drug']] = drug_info["cover_ratio"]  # 直接使用预计算的覆盖比
+        return scores
+    
+    def diagnosis_match_strategy(self, recommendations, test_diagnoses):
+        """基于诊断匹配的策略"""
+        scores = {}
+        for drug_info in recommendations:
+            # 检查是否匹配主要诊断
+            main_match = 1.0 if test_diagnoses and test_diagnoses[0] in drug_info['treating_diagnoses'] else 0.0
+            scores[drug_info['drug']] = main_match
+        return scores
+    
+    def tfidf_based_strategy(self, recommendations, test_diagnoses):
+        """方法2：TF-IDF-like策略"""
+        import math
+        
+        # 获取总诊断数量（需要从知识图谱中查询，这里简化处理）
+        total_diagnoses_count = 1000  # 假设总诊断数量，实际应该从KG获取
+        
+        scores = {}
+        for drug_info in recommendations:
+            # 计算诊断数量（该药物关联的诊断总数）
+            diagnosis_count = len(set(drug_info['treating_diagnoses']))
+            
+            # 计算TF-IDF得分
+            tf = drug_info['frequency']  # 词频（频率）
+            idf = math.log(total_diagnoses_count / max(1, diagnosis_count))  # 逆诊断频率
+            tfidf_score = tf * idf
+            
+            # 归一化到0-1范围
+            scores[drug_info['drug']] = min(1.0, tfidf_score / 10)  # 假设最大得分约10
+        
+        return scores
+    
+    def dynamic_selection(self, sorted_drugs):
+        """动态选择药物数量"""
+        if not sorted_drugs:
+            return []
+        
+        scores = [score for _, score in sorted_drugs]
+        
+        # 寻找得分差距较大的点
+        threshold_index = 0
+        for i in range(1, len(scores)):
+            if scores[i-1] - scores[i] > 0.2:  # 得分差距阈值
+                threshold_index = i
+                break
+        
+        # 如果没有明显差距，选择前3个
+        if threshold_index == 0:
+            threshold_index = min(3, len(sorted_drugs))
+        
+        return [drug for drug, _ in sorted_drugs[:threshold_index]]
 # retrieval.py - 药物检索专用代码
 from neo4j import GraphDatabase
 import json
@@ -75,37 +196,43 @@ def get_recommend(min_frequency: int = 1, test_file: str = None, save_path: str 
     NEO4J_PASSWORD = "MyStrongPassword123"
     kg = MedicalKnowledgeGraph(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
     retrieval = MedicalDrugRetrieval(kg)
+    
+    # 创建集成推荐器
+    ensemble_recommender = EnsembleDrugRecommender(retrieval)
+    
     save = []
     try:
         datas = load_jsonl_data(test_file)
         for data in datas:
             drug_id = data.get('就诊标识')
             test_diagnoses = data.get('出院诊断')
+            
             if not test_diagnoses:
                 print(f'{drug_id}的出院诊断是空的')
-                save.append(
-                    {
-                        'ID': drug_id,
-                        "prediction": []
-                    }
-                )
+                save.append({'ID': drug_id, "prediction": []})
                 continue
             
-            recommendations = retrieval.get_drugs_by_diagnoses(test_diagnoses, min_frequency=min_frequency)
-            drug_list = [drug_info['drug'] for drug_info in recommendations]
-            save.append(
-                {
-                    'ID': drug_id,
-                    "prediction": drug_list
-                }
-            )
-        output_file = f"{save_path}/KG-v1-submit-{min_frequency}.json"
+            # 使用增强版推荐
+            recommendations = ensemble_recommender.recommend(test_diagnoses, min_frequency=min_frequency)
+            
+            save.append({
+                'ID': drug_id,
+                "prediction": recommendations
+            })
+        
+        # 保存结果
+        output_file = f"{save_path}/enhanced_drug_recommendations-{min_frequency}.json"
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(save, f, ensure_ascii=False, indent=2)
+        
+        print(f"增强推荐结果已保存到: {output_file}")
         return output_file
         
+    except Exception as e:
+        print(f"处理过程中出现错误: {e}")
     finally:
-        kg.close()
+        if kg:
+            kg.close()
 
 
 def load_gt_jsonl(path: str, id_field: str, label_field: str, lower: bool) -> Dict[str, Set[str]]:
@@ -214,7 +341,7 @@ def main():
     ap.add_argument("--pred-label-field", default="prediction")
     ap.add_argument("--case-sensitive", action="store_true", help="区分大小写；默认不区分")
     args = ap.parse_args()
-    pred_file = get_recommend(min_frequency=8, test_file=args.gt)
+    pred_file = get_recommend(min_frequency=1, test_file=args.gt, save_path='/data/lzm/DrugRecommend/resource/output/val')
     lower = not args.case_sensitive
     gt = load_gt_jsonl(args.gt, args.gt_id_field, args.gt_label_field, lower)
     pred = load_pred(pred_file, args.pred_id_field, args.pred_label_field, lower)
@@ -228,3 +355,4 @@ def main():
 
 if __name__ == "__main__":
     pred_file = get_recommend(min_frequency=1, test_file='/data/lzm/DrugRecommend/src/data/CDrugRed-B-v1/CDrugRed_test-B.jsonl', save_path ='/data/lzm/DrugRecommend/resource/output/submit')
+    # main()
