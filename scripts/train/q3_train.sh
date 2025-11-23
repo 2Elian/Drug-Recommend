@@ -27,7 +27,7 @@ torchrun \
     --per_device_train_batch_size 2 \
     --gradient_accumulation_steps 4 \
     --learning_rate 1e-5 \
-    --num_train_epochs 50 \
+    --num_train_epochs 10 \
     --use_lora \
     --bf16 \
     --lora_rank 16 \
