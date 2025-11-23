@@ -23,8 +23,6 @@ def fit():
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, use_fast=False)
     tokenizer.padding_side = 'left'
     GLOBAL_TOKENIZER = tokenizer
-    special_drug_tokens = [f"<DRUG_{d}>" for d in all_drugs]
-    tokenizer.add_special_tokens({"additional_special_tokens": special_drug_tokens})
     exra = {
         "num_drug": num_drugs
     }

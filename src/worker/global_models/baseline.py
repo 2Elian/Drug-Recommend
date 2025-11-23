@@ -85,6 +85,8 @@ class GenerRecommendBaselineModel(DrugCausalLMBaseModel):
             eos_token_id=self.eos_id,
             do_sample=False,
             num_beams=1,
+            temperature=None,
+            top_p=None,
             use_cache=False,
         )
         prompt_length = input_ids.size(1)

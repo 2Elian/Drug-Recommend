@@ -123,7 +123,8 @@ def drug_classification_map_fn_optimized_eval(data: dict, tokenizer: AutoTokeniz
     result = {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
-        "labels": labels
+        "labels": labels,
+        "ID": data.get('就诊标识')
     }
         
     return result
