@@ -117,15 +117,21 @@ def drug_classification_map_fn_optimized_eval(data: dict, tokenizer: AutoTokeniz
     if labels is not None:
         labels_padding_len = max_seq_length - len(labels)
         labels = [-100] * labels_padding_len + labels
-    assert len(input_ids) == max_seq_length, "The sequence length is not equal to max_seq_length"
-    assert len(attention_mask) == max_seq_length, "The length of the attention mask is not equal to max_seq_length."
-    # assert len(labels) == max_seq_length, "The length of the abels array is not equal to max_seq_length."
-    result = {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "labels": labels,
-        "ID": data.get('就诊标识')
-    }
+        assert len(input_ids) == max_seq_length, "The sequence length is not equal to max_seq_length"
+        assert len(attention_mask) == max_seq_length, "The length of the attention mask is not equal to max_seq_length."
+        # assert len(labels) == max_seq_length, "The length of the abels array is not equal to max_seq_length."
+        result = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "labels": labels,
+            "ID": data['就诊标识']
+        }
+    else:
+        result = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "ID": data['就诊标识']
+        }       
         
     return result
 
